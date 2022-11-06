@@ -48,7 +48,7 @@ type User struct {
 var users []User
 
 type Expedient struct {
-	ID              int64  `json:"id"`
+	ID              string `json:"id"`
 	WorkspaceID     int64  `json:"workspaceId"`
 	InternalID      int64  `json:"internalId"`
 	ClientName      string `json:"clientName"`
@@ -104,6 +104,21 @@ func getExpedients(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(expedients)
+}
+
+func getExpedientById(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Content-Type", "application/json")
+	params := mux.Vars(r)
+
+	for _, item := range expedients {
+		if item.ID == params["id"] {
+			json.NewEncoder(w).Encode(item)
+			return
+		}
+
+	}
+
 }
 
 func main() {
@@ -188,7 +203,7 @@ func main() {
 	})
 
 	expedients = append(expedients, Expedient{
-		ID:              1,
+		ID:              "1",
 		WorkspaceID:     1,
 		InternalID:      1,
 		ClientName:      "Pedro Vargas",
@@ -209,7 +224,7 @@ func main() {
 	})
 
 	expedients = append(expedients, Expedient{
-		ID:              1,
+		ID:              "1",
 		WorkspaceID:     2,
 		InternalID:      2,
 		ClientName:      "Jose Alfredo Jimenez",
@@ -229,7 +244,7 @@ func main() {
 		InitialDate:     "2022-09-09",
 	})
 	expedients = append(expedients, Expedient{
-		ID:              6,
+		ID:              "6",
 		WorkspaceID:     7,
 		InternalID:      2,
 		ClientName:      "Armando Cruz",
@@ -255,6 +270,7 @@ func main() {
 	r.HandleFunc("/workspaces", getWorkspaces).Methods("GET")
 	r.HandleFunc("/users", getUsers).Methods("GET")
 	r.HandleFunc("/expedients", getExpedients).Methods("GET")
+	r.HandleFunc("/expedients/{id}", getExpedientById).Methods("GET")
 
 	log.Fatal(http.ListenAndServe(getPort(), r))
 }
