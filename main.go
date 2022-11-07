@@ -2,12 +2,20 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/golang-jwt/jwt"
 	"github.com/gorilla/mux"
 )
+
+type Message struct {
+	Status string `json:"status"`
+	Info   string `json:"info"`
+}
 
 type Tier struct {
 	ID                        int64 `json:"id"`
@@ -119,6 +127,130 @@ func getExpedientById(w http.ResponseWriter, r *http.Request) {
 
 	}
 
+}
+
+var jwtKey = []byte("Mysuperpassword")
+var api_key = "1234"
+
+func CreateJWT() (string, error) {
+
+	token := jwt.New(jwt.SigningMethodHS256)
+
+	claims := token.Claims.(jwt.MapClaims)
+
+	claims["exp"] = time.Now().Add(time.Hour).Unix()
+
+	tokenStr, err := token.SignedString(jwtKey)
+
+	if err != nil {
+		fmt.Println(err.Error())
+		return "", err
+	}
+
+	return tokenStr, nil
+}
+
+func ValidateJWT(next func(w http.ResponseWriter, r *http.Request)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		if r.Header["Token"] != nil {
+			token, err := jwt.Parse(r.Header["Token"][0], func(t *jwt.Token) (interface{}, error) {
+				_, ok := t.Method.(*jwt.SigningMethodHMAC)
+				if !ok {
+					w.WriteHeader(http.StatusUnauthorized)
+					w.Write([]byte("not authorized"))
+				}
+				return jwtKey, nil
+			})
+
+			if err != nil {
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte("not authorized: " + err.Error()))
+			}
+
+			if token.Valid {
+				next(w, r)
+			}
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte("not authorized"))
+		}
+	})
+}
+
+func GetJwt(w http.ResponseWriter, r *http.Request) {
+
+	fmt.Printf("Logging")
+	if r.Header["Access"] != nil {
+		if r.Header["Access"][0] != api_key {
+			return
+		} else {
+			token, err := CreateJWT()
+			if err != nil {
+				return
+			}
+			fmt.Fprint(w, token)
+		}
+	}
+}
+
+var allowedUsers = map[string]string{
+	"tester":  "Testing01!",
+	"tester2": "Testing01!",
+}
+
+type Credentials struct {
+	Password string `json:"password"`
+	Username string `json:"username"`
+}
+
+type Claims struct {
+	Username string `json:"username"`
+	jwt.StandardClaims
+}
+
+func Signin(w http.ResponseWriter, r *http.Request) {
+
+	fmt.Printf("Entered")
+	var creds Credentials
+
+	err := json.NewDecoder(r.Body).Decode(&creds)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	expectedPassword, ok := allowedUsers[creds.Username]
+	if (!ok) || expectedPassword != creds.Password {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	expiration := time.Now().Add(5 * time.Minute)
+
+	claims := &Claims{
+		Username: creds.Username,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expiration.Unix(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	tokenString, err := token.SignedString(jwtKey)
+	if (err) != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:    "token",
+		Value:   tokenString,
+		Expires: expiration,
+	})
+}
+
+func Home(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "super secret area")
 }
 
 func main() {
@@ -266,6 +398,8 @@ func main() {
 
 	r := mux.NewRouter()
 
+	r.HandleFunc("/", GetJwt).Methods("GET")
+	r.HandleFunc("/api", Home).Methods("POST")
 	r.HandleFunc("/tiers", getTiers).Methods("GET")
 	r.HandleFunc("/workspaces", getWorkspaces).Methods("GET")
 	r.HandleFunc("/users", getUsers).Methods("GET")
